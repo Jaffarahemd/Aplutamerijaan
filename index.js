@@ -14,6 +14,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import fs from "fs";
 import pino from "pino";
+
 import {
   makeWASocket,
   useMultiFileAuthState,
@@ -23,41 +24,73 @@ import {
 } from "@whiskeysockets/baileys";
 
 /* ================= SAFETY ================= */
-process.on("unhandledRejection", e => console.error("REJECTION:", e));
-process.on("uncaughtException", e => console.error("EXCEPTION:", e));
+
+process.on("unhandledRejection", err => {
+  console.error("UNHANDLED REJECTION:", err);
+});
+
+process.on("uncaughtException", err => {
+  console.error("UNCAUGHT EXCEPTION:", err);
+});
 
 /* ================= SERVER ================= */
+
 const app = express();
+
 const server = createServer(app);
-const io = new Server(server);
+
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 /* ================= SESSION ================= */
-const SESSION_PATH = process.env.SESSION_PATH || "./session";
+
+const SESSION_PATH =
+  process.env.SESSION_PATH || "./session";
 
 if (!fs.existsSync(SESSION_PATH)) {
-  fs.mkdirSync(SESSION_PATH, { recursive: true });
+  fs.mkdirSync(SESSION_PATH, {
+    recursive: true
+  });
 }
 
-/* ================= GLOBAL STATE ================= */
+/* ================= GLOBAL ================= */
+
 let sock = null;
+
 let isConnected = false;
+
 let isReconnecting = false;
+
 let stopSending = false;
 
-/* ================= HTML UI ================= */
-const html = `<!DOCTYPE html>
+/* ================= HTML ================= */
+
+const html = `
+<!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WhatsApp Control Panel</title>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+/>
+
+<title>WhatsApp Panel</title>
 
 <style>
+
 body{
   background:#0f172a;
-  font-family:Segoe UI;
   color:white;
+  font-family:Segoe UI;
   display:flex;
   justify-content:center;
   padding:20px;
@@ -66,17 +99,18 @@ body{
 .card{
   background:#111827;
   width:100%;
-  max-width:600px;
-  padding:20px;
+  max-width:650px;
   border-radius:20px;
+  padding:20px;
 }
 
 input,button{
   width:100%;
   padding:12px;
-  margin:8px 0;
-  border-radius:10px;
+  margin-top:10px;
   border:none;
+  border-radius:10px;
+  box-sizing:border-box;
 }
 
 input{
@@ -99,21 +133,24 @@ button{
 #logs{
   background:black;
   color:#22c55e;
-  height:180px;
+  height:220px;
   overflow:auto;
   padding:10px;
+  margin-top:15px;
   border-radius:10px;
   font-family:monospace;
 }
 
 .grp{
-  padding:8px;
   background:#1f2937;
-  margin:4px 0;
-  border-radius:8px;
+  padding:10px;
+  margin-top:5px;
+  border-radius:10px;
   cursor:pointer;
 }
+
 </style>
+
 </head>
 
 <body>
@@ -122,12 +159,17 @@ button{
 
 <h2>WhatsApp Bot Panel</h2>
 
-<div id="status">Status: Loading...</div>
+<div id="status">
+Status: Loading...
+</div>
 
-<input id="phone" placeholder="Phone number (91xxxxxxxxxx)">
+<input
+  id="phone"
+  placeholder="Phone Number (91xxxxxxxxxx)"
+/>
 
 <button onclick="pair()">
-Get Pairing Code
+GET PAIR CODE
 </button>
 
 <div id="pairBox"></div>
@@ -138,19 +180,35 @@ Get Pairing Code
 Login required
 </div>
 
-<input id="target" placeholder="Target JID">
+<input
+  id="target"
+  placeholder="Target JID"
+/>
 
-<input id="prefix" placeholder="Prefix / Name">
+<input
+  id="prefix"
+  placeholder="Prefix / Name"
+/>
 
-<input id="delay" placeholder="Delay seconds (default 10)">
+<input
+  id="delay"
+  placeholder="Delay in seconds (default 10)"
+/>
 
-<input type="file" id="file" accept=".txt">
+<input
+  type="file"
+  id="file"
+  accept=".txt"
+/>
 
-<button onclick="start()">
+<button onclick="startSend()">
 START
 </button>
 
-<button class="stop" onclick="stopMsg()">
+<button
+  class="stop"
+  onclick="stopSend()"
+>
 STOP
 </button>
 
@@ -166,49 +224,31 @@ const socket = io();
 
 let msgs = "";
 
-function pair() {
+function addLog(text){
 
-  if (!phone.value) {
-    return alert("Enter number");
-  }
+  logs.innerHTML += "<div>> " + text + "</div>";
 
-  socket.emit("pair", phone.value);
+  logs.scrollTop = logs.scrollHeight;
 }
 
-function stopMsg() {
+function pair(){
+
+  const num = phone.value.trim();
+
+  if(!num){
+    alert("Enter phone number");
+    return;
+  }
+
+  socket.emit("pair", num);
+}
+
+function stopSend(){
+
   socket.emit("stop");
 }
 
-socket.on("status", s => {
-  status.innerText = "Status: " + s;
-});
-
-socket.on("code", c => {
-  pairBox.innerText = "Pair Code: " + c;
-});
-
-socket.on("groups", g => {
-
-  groups.innerHTML = g.map(x =>
-    '<div class="grp" onclick="target.value=\\'' + x.id + '\\'">' +
-    x.subject +
-    '</div>'
-  ).join("");
-
-});
-
-file.onchange = e => {
-
-  const r = new FileReader();
-
-  r.onload = () => {
-    msgs = r.result;
-  };
-
-  r.readAsText(e.target.files[0]);
-};
-
-function start() {
+function startSend(){
 
   socket.emit("start", {
     target: target.value.trim(),
@@ -216,119 +256,232 @@ function start() {
     delay: delay.value.trim(),
     msgs
   });
-
 }
+
+socket.on("status", s => {
+
+  status.innerText = "Status: " + s;
+});
+
+socket.on("code", c => {
+
+  pairBox.innerText =
+    "Pair Code: " + c;
+});
 
 socket.on("log", m => {
 
-  logs.innerHTML += "<div>> " + m + "</div>";
+  addLog(m);
+});
 
-  logs.scrollTop = logs.scrollHeight;
+socket.on("groups", arr => {
+
+  groups.innerHTML = "";
+
+  arr.forEach(g => {
+
+    const div =
+      document.createElement("div");
+
+    div.className = "grp";
+
+    div.innerText = g.subject;
+
+    div.onclick = () => {
+      target.value = g.id;
+    };
+
+    groups.appendChild(div);
+  });
 
 });
+
+file.onchange = e => {
+
+  const fileObj =
+    e.target.files[0];
+
+  if(!fileObj) return;
+
+  const reader =
+    new FileReader();
+
+  reader.onload = () => {
+
+    msgs = reader.result || "";
+
+    addLog("Text file loaded");
+  };
+
+  reader.readAsText(fileObj);
+};
 
 </script>
 
 </body>
-</html>`;
+</html>
+`;
 
-app.get("/", (_, res) => {
+app.get("/", (req, res) => {
   res.send(html);
 });
 
-/* ================= WHATSAPP INIT ================= */
+/* ================= WHATSAPP ================= */
+
 async function startWhatsApp() {
 
   try {
 
-    const { state, saveCreds } =
-      await useMultiFileAuthState(SESSION_PATH);
+    const {
+      state,
+      saveCreds
+    } = await useMultiFileAuthState(
+      SESSION_PATH
+    );
 
-    const { version } =
-      await fetchLatestBaileysVersion();
+    const {
+      version
+    } = await fetchLatestBaileysVersion();
 
     sock = makeWASocket({
+
       auth: state,
+
       version,
-      browser: Browsers.ubuntu("Chrome"),
-      logger: pino({ level: "silent" })
+
+      browser:
+        Browsers.ubuntu("Chrome"),
+
+      logger:
+        pino({
+          level: "silent"
+        })
     });
 
-    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on(
+      "creds.update",
+      saveCreds
+    );
 
-    sock.ev.on("connection.update", async ({
-      connection,
-      lastDisconnect
-    }) => {
+    sock.ev.on(
+      "connection.update",
+      async update => {
 
-      if (connection === "open") {
+        const {
+          connection,
+          lastDisconnect
+        } = update;
 
-        isConnected = true;
-        isReconnecting = false;
+        if (connection === "open") {
 
-        console.log("WhatsApp Connected");
+          isConnected = true;
 
-        io.emit("status", "Connected");
+          isReconnecting = false;
 
-        const groups =
-          await sock.groupFetchAllParticipating();
+          console.log(
+            "WhatsApp Connected"
+          );
 
-        io.emit(
-          "groups",
-          Object.entries(groups).map(([id, g]) => ({
-            id,
-            subject: g.subject
-          }))
-        );
-      }
+          io.emit(
+            "status",
+            "Connected"
+          );
 
-      if (connection === "close") {
+          try {
 
-        isConnected = false;
+            const groups =
+              await sock.groupFetchAllParticipating();
 
-        console.log("Connection Closed");
+            const list =
+              Object.entries(groups).map(
+                ([id, g]) => ({
+                  id,
+                  subject:
+                    g.subject || "Unnamed"
+                })
+              );
 
-        io.emit("status", "Disconnected");
+            io.emit(
+              "groups",
+              list
+            );
 
-        const shouldReconnect =
-          lastDisconnect?.error?.output?.statusCode !==
-          DisconnectReason.loggedOut;
+          } catch (e) {
 
-        if (shouldReconnect && !isReconnecting) {
-
-          isReconnecting = true;
-
-          console.log("Reconnecting in 5 seconds...");
-
-          io.emit("status", "Reconnecting");
-
-          setTimeout(() => {
-            startWhatsApp();
-          }, 5000);
+            console.log(
+              "Group fetch failed:",
+              e.message
+            );
+          }
         }
-      }
 
-    });
+        if (connection === "close") {
+
+          isConnected = false;
+
+          io.emit(
+            "status",
+            "Disconnected"
+          );
+
+          console.log(
+            "Connection closed"
+          );
+
+          const code =
+            lastDisconnect?.error
+              ?.output?.statusCode;
+
+          const shouldReconnect =
+            code !== DisconnectReason.loggedOut;
+
+          if (
+            shouldReconnect &&
+            !isReconnecting
+          ) {
+
+            isReconnecting = true;
+
+            io.emit(
+              "status",
+              "Reconnecting"
+            );
+
+            console.log(
+              "Reconnecting in 5s..."
+            );
+
+            setTimeout(() => {
+              startWhatsApp();
+            }, 5000);
+          }
+        }
+
+      }
+    );
 
   } catch (err) {
 
-    console.error("WhatsApp Start Error:", err);
+    console.error(
+      "START ERROR:",
+      err
+    );
 
     setTimeout(() => {
       startWhatsApp();
     }, 5000);
-
   }
-
 }
 
 startWhatsApp();
 
 /* ================= SOCKET ================= */
+
 io.on("connection", socket => {
 
   socket.emit(
     "status",
+
     isConnected
       ? "Connected"
       : isReconnecting
@@ -336,74 +489,134 @@ io.on("connection", socket => {
       : "Disconnected"
   );
 
+  /* ================= PAIR ================= */
+
   socket.on("pair", async raw => {
 
     try {
 
       if (!sock) {
-        return socket.emit("log", "Socket not ready");
+
+        socket.emit(
+          "log",
+          "Socket not ready"
+        );
+
+        return;
       }
 
       if (isConnected) {
-        return socket.emit("log", "Already paired");
+
+        socket.emit(
+          "log",
+          "Already connected"
+        );
+
+        return;
       }
 
-      const phone = raw.replace(/\D/g, "");
+      const phone =
+        String(raw || "")
+          .replace(/\D/g, "");
+
+      if (!phone) {
+
+        socket.emit(
+          "log",
+          "Invalid number"
+        );
+
+        return;
+      }
 
       const code =
-        await sock.requestPairingCode(phone);
+        await sock.requestPairingCode(
+          phone
+        );
 
-      socket.emit("code", code);
+      socket.emit(
+        "code",
+        code
+      );
 
-      socket.emit("log", "Pairing code generated");
+      socket.emit(
+        "log",
+        "Pair code generated"
+      );
 
     } catch (err) {
 
       socket.emit(
         "log",
-        "Pairing failed: " + err.message
+        "Pair failed: " + err.message
       );
-
     }
 
   });
+
+  /* ================= START SEND ================= */
 
   socket.on("start", async cfg => {
 
     try {
 
-      if (!isConnected || !sock) {
-        return socket.emit("log", "Not connected");
+      if (!sock || !isConnected) {
+
+        socket.emit(
+          "log",
+          "WhatsApp not connected"
+        );
+
+        return;
       }
 
-      if (!cfg.target || !cfg.target.includes("@")) {
-        return socket.emit("log", "Invalid target JID");
+      if (
+        !cfg.target ||
+        !cfg.target.includes("@")
+      ) {
+
+        socket.emit(
+          "log",
+          "Invalid target JID"
+        );
+
+        return;
       }
 
-      stopSending = false;
+      const rawText =
+        String(cfg.msgs || "");
 
       /* ================= LINE SPLIT ================= */
 
-      const lines = cfg.msgs
+      const lines = rawText
         .split("\n")
         .map(x => x.trim())
         .filter(Boolean);
 
       if (!lines.length) {
-        return socket.emit("log", "No valid lines found");
+
+        socket.emit(
+          "log",
+          "No valid lines found"
+        );
+
+        return;
       }
 
-      let index = 0;
+      stopSending = false;
 
       const delayMs =
-        Math.max(10, parseInt(cfg.delay) || 10) * 1000;
+        Math.max(
+          10,
+          parseInt(cfg.delay) || 10
+        ) * 1000;
 
       socket.emit(
         "log",
-        \`Loaded \${lines.length} lines | Delay \${delayMs / 1000}s\`
+        `Loaded ${lines.length} lines | Delay ${delayMs / 1000}s`
       );
 
-      /* ================= SEND LOOP ================= */
+      let index = 0;
 
       async function sendNext() {
 
@@ -419,11 +632,13 @@ io.on("connection", socket => {
 
         try {
 
-          const line = lines[index];
+          const line =
+            lines[index];
 
-          const text = cfg.prefix
-            ? \`*\${cfg.prefix}* \${line}\`
-            : line;
+          const text =
+            cfg.prefix
+              ? `*${cfg.prefix}* ${line}`
+              : line;
 
           await sock.sendMessage(
             cfg.target,
@@ -432,17 +647,21 @@ io.on("connection", socket => {
 
           socket.emit(
             "log",
-            \`Sent line \${index + 1}/\${lines.length}\`
+            `Sent line ${index + 1}/${lines.length}`
           );
 
-          index = (index + 1) % lines.length;
+          index =
+            (index + 1) %
+            lines.length;
 
-          const randomExtra =
-            Math.floor(Math.random() * 3000);
+          const extra =
+            Math.floor(
+              Math.random() * 3000
+            );
 
           setTimeout(
             sendNext,
-            delayMs + randomExtra
+            delayMs + extra
           );
 
         } catch (err) {
@@ -456,7 +675,6 @@ io.on("connection", socket => {
             sendNext,
             delayMs
           );
-
         }
 
       }
@@ -469,24 +687,31 @@ io.on("connection", socket => {
         "log",
         "Start failed: " + err.message
       );
-
     }
 
   });
+
+  /* ================= STOP ================= */
 
   socket.on("stop", () => {
 
     stopSending = true;
 
+    socket.emit(
+      "log",
+      "Stopping..."
+    );
+
   });
 
 });
 
-/* ================= START ================= */
+/* ================= START SERVER ================= */
+
 server.listen(PORT, () => {
 
   console.log(
-    \`Server running on port \${PORT}\`
+    "Server running on port " + PORT
   );
 
 });
